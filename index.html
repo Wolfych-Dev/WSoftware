@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Code Editor</title>
+  <!-- Pyodide for Python execution -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+  <style>
+    :root {
+      --bg-color: #1a1a1a;
+      --text-color: #e0e0e0;
+      --tab-bg: #2a2a2a;
+      --tab-active: #0a84ff;
+      --button-bg: #2d2d2d;
+      --button-hover: #3a3a3a;
+      --output-bg: #212121;
+      --danger-color: #ff4d4f;
+      --border-color: #3a3a3a;
+      --modal-bg: #2a2a2a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Consolas', 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: var(--bg-color);
+      color: var(--text-color);
+    }
+
+    .top-bar {
+      display: flex;
+      padding: 10px;
+      background: var(--tab-bg);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    select, button {
+      padding: 8px;
+      border-radius: 4px;
+      border: none;
+      background: var(--button-bg);
+      color: var(--text-color);
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+
+    button {
+      background: var(--tab-active);
+      color: white;
+    }
+
+    button.danger {
+      background: var(--danger-color);
+    }
+
+    button:hover {
+      background: var(--button-hover);
+    }
+
+    #tabs {
+      display: flex;
+      padding: 8px;
+      background: var(--tab-bg);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .tab {
+      padding: 8px 16px;
+      cursor: pointer;
+      border-radius: 4px;
+      background: var(--button-bg);
+      margin-right: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tab.active {
+      background: var(--tab-active);
+      color: white;
+    }
+
+    .tab-close {
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .tab-close:hover {
+      color: var(--danger-color);
+    }
+
+    #editor-container {
+      flex: 1;
+    }
+
+    #code {
+      width: 100%;
+      height: 100%;
+      padding: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      border: none;
+      resize: none;
+      outline: none;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      background: var(--tab-bg);
+      border-top: 1px solid var(--border-color);
+    }
+
+    #output {
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+      background: var(--output-bg);
+      border-top: 1px solid var(--border-color);
+      font-size: 13px;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background: var(--modal-bg);
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .close {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-color);
+    }
+
+    .close:hover {
+      color: var(--danger-color);
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    body.light {
+      --bg-color: #ffffff;
+      --text-color: #333333;
+      --tab-bg: #f0f0f0;
+      --button-bg: #e0e0e0;
+      --button-hover: #d0d0d0;
+      --output-bg: #f5f5f5;
+      --border-color: #d0d0d0;
+      --modal-bg: #f0f0f0;
+    }
+
+    body.solarized {
+      --bg-color: #002b36;
+      --text-color: #93a1a1;
+      --tab-bg: #073642;
+      --tab-active: #268bd2;
+      --button-bg: #073642;
+      --button-hover: #0a4b5e;
+      --output-bg: #073642;
+      --border-color: #0a4b5e;
+      --modal-bg: #073642;
+    }
+  </style>
+</head>
+<body class="dark">
+  <div class="top-bar">
+    <select id="language-select">
+      <option value="ru">Русский</option>
+      <option value="en">English</option>
+      <option value="ua">Українська</option>
+    </select>
+    <select id="theme-select">
+      <option value="dark">Темная</option>
+      <option value="light">Светлая</option>
+      <option value="solarized">Solarized</option>
+    </select>
+    <select id="prog-language-select">
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+      <option value="html">HTML/CSS</option>
+    </select>
+  </div>
+
+  <div id="tabs"></div>
+
+  <div id="editor-container">
+    <textarea id="code" spellcheck="false"></textarea>
+  </div>
+
+  <div class="buttons">
+    <button id="runBtn">▶ Запустить</button>
+    <button id="helpBtn">Базовые команды</button>
+    <button id="exportBtn">Экспорт</button>
+    <button id="importBtn">Импорт</button>
+    <button id="newProjectBtn">+ Новый проект</button>
+    <button id="deleteProjectBtn" class="danger">Удалить проект</button>
+    <input type="file" id="file-input" accept=".js,.py,.html,.css,.txt">
+  </div>
+
+  <div id="output"></div>
+
+  <div id="help-modal" class="modal">
+    <div class="modal-content">
+      <span class="close">×</span>
+      <h2 id="help-title">Базовые команды</h2>
+      <pre id="help-content"></pre>
+    </div>
+  </div>
+
+  <script>
+    // State
+    const state = {
+      projects: { "Проект 1": "" },
+      currentProject: "Проект 1",
+      language: "ru",
+      theme: "dark",
+      progLanguage: "javascript"
+    };
+
+    // Templates
+    const templates = {
+      javascript: `// Пример JavaScript\nconsole.log("Привет, мир!");\n`,
+      python: `# Пример Python\nprint("Привет, мир!")\n`,
+      html: `<!DOCTYPE html>\n<html>\n<head>\n  <title>Пример</title>\n</head>\n<body>\n  <h1>Привет, мир!</h1>\n</body>\n</html>\n`
+    };
+
+    // DOM elements
+    const DOM = {
+      code: document.getElementById("code"),
+      tabs: document.getElementById("tabs"),
+      output: document.getElementById("output"),
+      runBtn: document.getElementById("runBtn"),
+      helpBtn: document.getElementById("helpBtn"),
+      exportBtn: document.getElementById("exportBtn"),
+      importBtn: document.getElementById("importBtn"),
+      newProjectBtn: document.getElementById("newProjectBtn"),
+      deleteProjectBtn: document.getElementById("deleteProjectBtn"),
+      fileInput: document.getElementById("file-input"),
+      languageSelect: document.getElementById("language-select"),
+      themeSelect: document.getElementById("theme-select"),
+      progLanguageSelect: document.getElementById("prog-language-select"),
+      helpModal: document.getElementById("help-modal"),
+      helpTitle: document.getElementById("help-title"),
+      helpContent: document.getElementById("help-content")
+    };
+
+    // Translations
+    const translations = {
+      ru: {
+        run: "▶ Запустить",
+        help: "Базовые команды",
+        export: "Экспорт",
+        import: "Импорт",
+        newProject: "+ Новый проект",
+        deleteProject: "Удалить проект",
+        helpTitle: "Базовые команды",
+        confirmDelete: "Удалить проект '{name}'?",
+        cantDeleteLast: "Нельзя удалить последний проект",
+        createProject: "Создать новый проект",
+        enterName: "Введите название:",
+        fileReadError: "Ошибка чтения файла",
+        noFileSelected: "Файл не выбран",
+        pyodideError: "Ошибка: Не удалось загрузить Python. Проверьте интернет."
+      },
+      en: {
+        run: "▶ Run",
+        help: "Basic commands",
+        export: "Export",
+        import: "Import",
+        newProject: "+ New project",
+        deleteProject: "Delete project",
+        helpTitle: "Basic commands",
+        confirmDelete: "Delete project '{name}'?",
+        cantDeleteLast: "Cannot delete the last project",
+        createProject: "Create new project",
+        enterName: "Enter name:",
+        fileReadError: "File read error",
+        noFileSelected: "No file selected",
+        pyodideError: "Error: Failed to load Python. Check internet."
+      },
+      ua: {
+        run: "▶ Запустити",
+        help: "Базові команди",
+        export: "Експорт",
+        import: "Імпорт",
+        newProject: "+ Новий проект",
+        deleteProject: "Видалити проект",
+        helpTitle: "Базові команди",
+        confirmDelete: "Видалити проект '{name}'?",
+        cantDeleteLast: "Не можна видалити останній проект",
+        createProject: "Створити новий проект",
+        enterName: "Введіть назву:",
+        fileReadError: "Помилка читання файлу",
+        noFileSelected: "Файл не вибрано",
+        pyodideError: "Помилка: Не вдалося завантажити Python. Перевірте інтернет."
+      }
+    };
+
+    // Help content
+    const helpContent = {
+      javascript: {
+        ru: `console.log - вывод в консоль\nlet/const - переменные\nif/else - условия\nfor/while - циклы\nfunction - функции`,
+        en: `console.log - console output\nlet/const - variables\nif/else - conditions\nfor/while - loops\nfunction - functions`,
+        ua: `console.log - вивід у консоль\nlet/const - змінні\nif/else - умови\nfor/while - цикли\nfunction - функції`
+      },
+      python: {
+        ru: `print - вывод в консоль\ndef - функции\nif/elif/else - условия\nfor/while - циклы\nreturn - возврат`,
+        en: `print - console output\ndef - functions\nif/elif/else - conditions\nfor/while - loops\nreturn - return`,
+        ua: `print - вивід у консоль\ndef - функції\nif/elif/else - умови\nfor/while - цикли\nreturn - повернення`
+      },
+      html: {
+        ru: `<div> - блочный элемент\n<style> - CSS стили\n<script> - JavaScript\nclass/id - селекторы\ndisplay: flex - раскладка`,
+        en: `<div> - block element\n<style> - CSS styles\n<script> - JavaScript\nclass/id - selectors\ndisplay: flex - layout`,
+        ua: `<div> - блочний елемент\n<style> - CSS стилі\n<script> - JavaScript\nclass/id - селектори\ndisplay: flex - розкладка`
+      }
+    };
+
+    // Pyodide instance
+    let pyodide = null;
+
+    // Initialize
+    async function init() {
+      console.log("Initializing editor");
+      // Verify DOM elements
+      for (const [key, value] of Object.entries(DOM)) {
+        if (!value) {
+          DOM.output.textContent = `Ошибка: Элемент ${key} не найден`;
+          console.error(`DOM element ${key} not found`);
+          return;
+        }
+      }
+
+      // Load Pyodide
+      try {
+        console.log("Loading Pyodide...");
+        pyodide = await loadPyodide();
+        console.log("Pyodide loaded successfully");
+      } catch (e) {
+        console.error("Failed to load Pyodide:", e);
+        DOM.output.textContent = translations[state.language].pyodideError;
+      }
+
+      loadState();
+      setupEventListeners();
+      renderTabs();
+      updateEditor();
+      applyTheme();
+      updateUI();
+    }
+
+    // Load state
+    function loadState() {
+      try {
+        const saved = localStorage.getItem("editorState");
+        if (saved) {
+          Object.assign(state, JSON.parse(saved));
+          DOM.languageSelect.value = state.language;
+          DOM.themeSelect.value = state.theme;
+          DOM.progLanguageSelect.value = state.progLanguage;
+        }
+      } catch (e) {
+        console.error("Error loading state:", e);
+      }
+    }
+
+    // Save state
+    function saveState() {
+      try {
+        localStorage.setItem("editorState", JSON.stringify(state));
+      } catch (e) {
+        console.error("Error saving state:", e);
+      }
+    }
+
+    // Setup event listeners
+    function setupEventListeners() {
+      console.log("Setting up event listeners");
+      DOM.runBtn.addEventListener("click", () => {
+        console.log("Run button clicked");
+        runCode();
+      });
+
+      DOM.helpBtn.addEventListener("click", () => {
+        console.log("Help button clicked");
+        DOM.helpModal.style.display = "flex";
+      });
+
+      DOM.exportBtn.addEventListener("click", () => {
+        console.log("Export button clicked");
+        exportCode();
+      });
+
+      DOM.importBtn.addEventListener("click", () => {
+        console.log("Import button clicked");
+        DOM.fileInput.click();
+      });
+
+      DOM.newProjectBtn.addEventListener("click", () => {
+        console.log("New project button clicked");
+        createProject();
+      });
+
+      DOM.deleteProjectBtn.addEventListener("click", () => {
+        console.log("Delete project button clicked");
+        deleteProject();
+      });
+
+      DOM.fileInput.addEventListener("change", (e) => {
+        console.log("File input changed");
+        handleFileImport(e);
+      });
+
+      DOM.languageSelect.addEventListener("change", (e) => {
+        console.log("Language changed to:", e.target.value);
+        state.language = e.target.value;
+        saveState();
+        updateUI();
+      });
+
+      DOM.themeSelect.addEventListener("change", (e) => {
+        console.log("Theme changed to:", e.target.value);
+        state.theme = e.target.value;
+        applyTheme();
+        saveState();
+      });
+
+      DOM.progLanguageSelect.addEventListener("change", (e) => {
+        console.log("Prog language changed to:", e.target.value);
+        state.progLanguage = e.target.value;
+        updateEditor();
+        updateUI();
+        saveState();
+      });
+
+      DOM.code.addEventListener("input", () => {
+        state.projects[state.currentProject] = DOM.code.value;
+        saveState();
+      });
+
+      DOM.helpModal.addEventListener("click", (e) => {
+        if (e.target === DOM.helpModal || e.target.classList.contains("close")) {
+          console.log("Modal closed");
+          DOM.helpModal.style.display = "none";
+        }
+      });
+    }
+
+    // Render tabs
+    function renderTabs() {
+      console.log("Rendering tabs");
+      DOM.tabs.innerHTML = "";
+      Object.keys(state.projects).forEach(name => {
+        const tab = document.createElement("div");
+        tab.className = `tab ${name === state.currentProject ? "active" : ""}`;
+        tab.innerHTML = `${name} <span class="tab-close" data-project="${name}">×</span>`;
+        tab.addEventListener("click", (e) => {
+          if (!e.target.classList.contains("tab-close")) {
+            console.log("Switching to project:", name);
+            switchProject(name);
+          }
+        });
+        tab.querySelector(".tab-close").addEventListener("click", (e) => {
+          e.stopPropagation();
+          console.log("Deleting project:", name);
+          deleteProject(name);
+        });
+        DOM.tabs.appendChild(tab);
+      });
+    }
+
+    // Switch project
+    function switchProject(name) {
+      state.projects[state.currentProject] = DOM.code.value;
+      state.currentProject = name;
+      updateEditor();
+      renderTabs();
+      saveState();
+    }
+
+    // Update editor
+    function updateEditor() {
+      const currentCode = state.projects[state.currentProject];
+      DOM.code.value = currentCode || templates[state.progLanguage] || "";
+    }
+
+    // Create project
+    function createProject() {
+      const t = translations[state.language];
+      const name = prompt(t.enterName);
+      if (!name) return;
+      if (state.projects[name]) {
+        alert(`Проект "${name}" уже существует!`);
+        return;
+      }
+      state.projects[state.currentProject] = DOM.code.value;
+      state.projects[name] = templates[state.progLanguage] || "";
+      switchProject(name);
+    }
+
+    // Delete project
+    function deleteProject(name = state.currentProject) {
+      const t = translations[state.language];
+      if (Object.keys(state.projects).length <= 1) {
+        alert(t.cantDeleteLast);
+        return;
+      }
+      if (confirm(t.confirmDelete.replace("{name}", name))) {
+        delete state.projects[name];
+        const nextProject = Object.keys(state.projects)[0];
+        switchProject(nextProject);
+      }
+    }
+
+    // Run code
+    async function runCode() {
+      console.log("Running code");
+      DOM.output.textContent = "";
+      const code = DOM.code.value;
+      const lang = state.progLanguage;
+
+      try {
+        if (lang === "javascript") {
+          console.log("Executing JavaScript");
+          const oldLog = console.log;
+          console.log = (...args) => {
+            DOM.output.textContent += args.join(" ") + "\n";
+            oldLog.apply(console, args);
+          };
+          new Function(code)();
+          console.log = oldLog;
+        } else if (lang === "python") {
+          console.log("Executing Python");
+          if (!pyodide) {
+            console.error("Pyodide not loaded");
+            DOM.output.textContent = translations[state.language].pyodideError;
+            return;
+          }
+          // Redirect stdout
+          pyodide.runPython(`
+            import sys
+            from io import StringIO
+            sys.stdout = StringIO()
+          `);
+          await pyodide.runPythonAsync(code);
+          const output = pyodide.runPython("sys.stdout.getvalue()");
+          DOM.output.textContent = output || "";
+        } else if (lang === "html") {
+          console.log("Executing HTML");
+          const win = window.open("", "_blank");
+          win.document.write(code);
+          win.document.close();
+          DOM.output.textContent = "HTML отображен в новом окне.";
+        }
+      } catch (e) {
+        console.error("Execution error:", e);
+        DOM.output.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    // Export code
+    function exportCode() {
+      console.log("Exporting code");
+      const lang = state.progLanguage;
+      const ext = lang === "javascript" ? "js" : lang === "python" ? "py" : "html";
+      const blob = new Blob([DOM.code.value], { type: `text/${lang}` });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${state.currentProject}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Import file
+    function handleFileImport(e) {
+      console.log("Importing file");
+      const file = e.target.files[0];
+      if (!file) {
+        alert(translations[state.language].noFileSelected);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const name = file.name.replace(/\.[^/.]+$/, "");
+        if (state.projects[name] && !confirm(translations[state.language].confirmDelete.replace("{name}", name))) {
+          return;
+        }
+        state.projects[state.currentProject] = DOM.code.value;
+        state.projects[name] = event.target.result;
+        switchProject(name);
+      };
+      reader.onerror = () => alert(translations[state.language].fileReadError);
+      reader.readAsText(file);
+      e.target.value = "";
+    }
+
+    // Update UI
+    function updateUI() {
+      const t = translations[state.language];
+      DOM.runBtn.textContent = t.run;
+      DOM.helpBtn.textContent = t.help;
+      DOM.exportBtn.textContent = t.export;
+      DOM.importBtn.textContent = t.import;
+      DOM.newProjectBtn.textContent = t.newProject;
+      DOM.deleteProjectBtn.textContent = t.deleteProject;
+      DOM.helpTitle.textContent = t.helpTitle;
+      DOM.helpContent.textContent = helpContent[state.progLanguage][state.language];
+    }
+
+    // Apply theme
+    function applyTheme() {
+      document.body.className = state.theme;
+    }
+
+    // Start app
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("DOM loaded, starting initialization");
+      init();
+    });
+  </script>
+</body>
+</html>
